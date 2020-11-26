@@ -1,9 +1,12 @@
 #!/usr/bin/with-contenv bash
 
 USER_NAME=${USER_NAME:-linuxserver.io}
+IFS=', ' read -r -a USER_ARRAY <<< "$USER_NAMES"
 
 PUID=${PUID:-911}
 PGID=${PGID:-911}
+
+
 
 [[ "$USER_NAME" != "abc" ]] && \
     usermod -l "$USER_NAME" abc && \
@@ -11,6 +14,19 @@ PGID=${PGID:-911}
 
 groupmod -o -g "$PGID" "$USER_NAME"
 usermod -o -u "$PUID" "$USER_NAME"
+
+echo "creating users"
+for element in "${USER_ARRAY[@]}"
+do
+    echo "preparing user $element"
+    PUID=$((PUID+1))
+    echo "new PUID: $PUID"
+    id -u $element &>/dev/null || useradd --shell /bin/bash -d /home/$element -m $element
+
+    groupmod -o -g "$PGID" "$element"
+    #usermod -o -u "$PUID" "$element"
+
+done
 
 echo '
 -------------------------------------
@@ -32,6 +48,7 @@ User uid:    $(id -u "$USER_NAME")
 User gid:    $(id -g "$USER_NAME")
 -------------------------------------
 "
+
 chown "$USER_NAME":"$USER_NAME" /app
 chown "$USER_NAME":"$USER_NAME" /config
 chown "$USER_NAME":"$USER_NAME" /defaults

@@ -4,11 +4,16 @@
 mkdir -p \
     /config/{.ssh,ssh_host_keys,logs/openssh}
 
+echo "Multi users are: $USER_NAMES"
+echo "Admin User name is set to $USER_NAME"
 USER_NAME=${USER_NAME:-linuxserver.io}
-echo "User name is set to $USER_NAME"
+IFS=', ' read -r -a USER_ARRAY <<< "${USER_NAMES}"
 
 # set password for abc to unlock it and set sudo access
 sed -i "/${USER_NAME} ALL.*/d" /etc/sudoers
+
+
+
 if [ "$SUDO_ACCESS" == "true" ]; then
     if [ -n "$USER_PASSWORD" ] || [ -n "$USER_PASSWORD_FILE" -a -f "$USER_PASSWORD_FILE" ]; then
         echo "${USER_NAME} ALL=(ALL) ALL" >> /etc/sudoers
@@ -20,6 +25,17 @@ if [ "$SUDO_ACCESS" == "true" ]; then
 else
     echo "Sudo is disabled."
 fi
+
+
+for element in "${USER_ARRAY[@]}"
+do
+    echo "unlock user $element"
+    sed -i "/$element ALL.*/d" /etc/sudoers
+    USER_PASSWORD=${USER_PASSWORD:-$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-8};echo;)}
+    echo "$element:${USER_PASSWORD}" | chpasswd
+    echo "random pw generated for user $element: $USER_PASSWORD"
+done
+
 [[ -n "$USER_PASSWORD_FILE" ]] && [[ -f "$USER_PASSWORD_FILE" ]] && \
     USER_PASSWORD=$(cat "$USER_PASSWORD_FILE") && \
     echo "User password is retrieved from file."
@@ -70,6 +86,33 @@ fi
     [[ ! $(grep "$PUBLIC_KEY2" /config/.ssh/authorized_keys) ]] && \
     echo "$PUBLIC_KEY2" >> /config/.ssh/authorized_keys && \
     echo "Public key from file added"
+
+echo "adding public key files"
+
+for element in "${USER_ARRAY[@]}"
+do
+    
+    mkdir -p /home/$element/.ssh
+    
+    if [ ! -f /home/$element/.ssh/authorized_keys ];then
+        touch /home/$element/.ssh/authorized_keys
+    fi
+    search_path="/public_keys/$element.pub"
+    echo "searching for pub key for user $element at $search_path"
+    if test -f "$search_path"; then
+        echo "found public key for $element"
+        PUBLIC_KEY=$(cat "/public_keys/$element.pub")
+        [[ ! $(grep "$PUBLIC_KEY" /home/$element/.ssh/authorized_keys) ]] && \
+        echo "$PUBLIC_KEY" >> /home/$element/.ssh/authorized_keys
+        chown -R "$element":"$element" /home/$element/.ssh
+        chmod 700 /home/$element/.ssh
+        chmod 600 /home/$element/.ssh/authorized_keys
+    else
+        echo "could not find public key for $element"
+    fi
+    
+done
+
 
 # back up old log files processed by logrotate
 [[ -f /config/logs/openssh/openssh.log ]] && \
